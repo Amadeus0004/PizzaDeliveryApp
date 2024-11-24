@@ -36,7 +36,7 @@ The Pizza Delivery App is a simple Java-based application designed to manage piz
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Amadeus0004/delivery-app.git
+   git clone https://github.com/Amadeus0004/PizzaDeliveryApp.git
    cd delivery-app
 2. Compile the Java files:
    ```bash
