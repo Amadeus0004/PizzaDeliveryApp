@@ -1,44 +1,57 @@
-import java.util.*;
+import managers.AuthenticationManager;
+import models.*;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
 public class DeliveryApp {
-    private static List<DeliveryStaff> deliveryStaffList = new ArrayList<>();
     private static List<Order> orders = new ArrayList<>();
-    private static final FileManager fileManager = new FileManager();
-    private static int ticks = 0;
+    private static List<Customer> registeredUsers = new ArrayList<>();
+    private static List<DeliveryStaff> registeredDeliveryStaff = new ArrayList<>();
+    private static List<FoodManager> registeredFoodManagers = new ArrayList<>();
+    private static AuthenticationManager authenticationManager = new AuthenticationManager();
+    private static User currentUser  = null;
+    private static FileManager fileManager = new FileManager();
+    private static FoodManager foodManager = new FoodManager("System food manager", "FM001");
+    private static int customerCount = 0;
+    private static int deliveryStaffCount = 0;
+    private static int foodManagerCount = 0;
+
 
     public static void main(String[] args) {
-        deliveryStaffList = fileManager.loadDeliveryStaff(); // Load delivery staff from file
-        orders = fileManager.loadOrders(); // Load orders from file
+        foodManager.loadMenu();
+        registeredDeliveryStaff = fileManager.loadDeliveryStaff();
+        orders = fileManager.loadOrders();
+        registeredUsers = fileManager.loadCustomers();
+        registeredFoodManagers = fileManager.loadFoodManagers();
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
 
 
-        //main loop for the application
+
         while (running) {
-            displayMenu(); //Display the menu options
+            System.out.println("Welcome to the Delivery App!");
+            System.out.println("1. Register");
+            System.out.println("2. Login");
+            System.out.println("3. Exit");
+            System.out.print("Enter your choice: ");
+
             int choice = scanner.nextInt();
-            scanner.nextLine(); // Consume newline
+            scanner.nextLine();
 
             switch (choice) {
                 case 1:
-                    addDeliveryStaff(scanner); // Add new delivery staff
-                    updateTicks(); // Update ticks and manage order status
+                    registerUser (scanner);
                     break;
                 case 2:
-                    placeOrder(scanner); //Place a new order
-                    updateTicks();
+                    if (loginUser (scanner)) {
+                        userMenu(scanner);
+                    }
                     break;
                 case 3:
-                    showOrders();// Show current orders
-                    updateTicks();
-                    break;
-                case 4:
-                    showEmployees(); // Show current employees
-                    updateTicks();
-                    break;
-                case 5:
-                    closeStore(); // Save state and close the application
-                    running = false; // Exit the loop
+                    saveDataAndExit(scanner);
+                    running = false;
                     break;
                 default:
                     System.out.println("Invalid choice. Please try again.");
@@ -47,145 +60,258 @@ public class DeliveryApp {
         scanner.close();
     }
 
-    //Updates the ticks and manages order status
-    private static void updateTicks() {
-        ticks++;
+    private static String generateUniqueId(String userType) {
+        String prefix;
+        int count;
 
-        // Periodically save the state (e.g., every 5 ticks)
-        if (ticks % 5 == 0) {
-            fileManager.saveDeliveryStaff(deliveryStaffList);
-            fileManager.saveOrders(orders);
-            System.out.println("Periodic save at tick " + ticks);
+        switch (userType) {
+            case "customer":
+                prefix = "C";
+                count = ++customerCount;
+                break;
+            case "deliverystaff":
+                prefix = "D";
+                count = ++deliveryStaffCount;
+                break;
+            case "foodmanager":
+                prefix = "F";
+                count = ++foodManagerCount;
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid user type");
         }
 
-        //Iterate through orders to update their status based oon remaining ticks
-        Iterator<Order> iterator = orders.iterator();
-        while (iterator.hasNext()) {
-            Order order = iterator.next();
-            if (!order.isCompleted()) {
-                int remainingTicks = order.getRemainingTicks();
-                if (remainingTicks > 0) {
-                    order.setRemainingTicks(remainingTicks - 1); // Decrease remaining ticks
-                } else {
-                    // Pizza delivery completed
-                    order.setCompleted(true);
-                    DeliveryStaff assignedStaff = order.getAssignedStaff();
-                    if (assignedStaff != null) {
-                        assignedStaff.setAvailable(true); // Mark staff as available
-                        System.out.println("Pizza for " + order.getCustomerName() + " has been delivered by " + assignedStaff.getName() + "!");
-                    }
-                }
+        return String.format("%s%03d", prefix, count);
+    }
+
+    private static void registerUser (Scanner scanner) {
+        System.out.println("Select your position:");
+        System.out.println("1. Customer");
+        System.out.println("2. Delivery Staff");
+        System.out.println("3. Food Manager");
+        System.out.print("Enter your choice: ");
+
+        int positionChoice = scanner.nextInt();
+        scanner.nextLine();
+
+        System.out.print("Enter your name: ");
+        String name = scanner.nextLine();
+
+        String id;
+        switch (positionChoice) {
+            case 1:
+                id = generateUniqueId("customer");
+                Customer customer = new Customer(name, id);
+                registeredUsers.add(customer);
+                System.out.println("Registered successfully as Customer. Your ID is: " + id);
+                break;
+            case 2:
+                id = generateUniqueId("deliverystaff");
+                DeliveryStaff deliveryStaff = new DeliveryStaff(name, id);
+                registeredDeliveryStaff.add(deliveryStaff);
+                System.out.println("Registered successfully as Delivery Staff. Your ID is: " + id);
+                break;
+            case 3:
+                id = generateUniqueId("foodmanager");
+                FoodManager foodManager = new FoodManager(name, id);
+                registeredFoodManagers.add(foodManager);
+                System.out.println("Registered successfully as Food Manager. Your ID is: " + id);
+                break;
+            default:
+                System.out.println("Invalid choice. Registration failed.");
+                return;
+        }
+
+        System.out.print("Enter your password: ");
+        String password = scanner.nextLine();
+
+        if (authenticationManager.registerUser (id, password)) {
+            System.out.println("Please remember your ID for future logins: " + id);
+        }
+    }
+
+    private static boolean loginUser (Scanner scanner) {
+        System.out.print("Enter your ID: ");
+        String id = scanner.nextLine();
+
+        System.out.print("Enter your password: ");
+        String password = scanner.nextLine();
+
+        List<User> allUsers = new ArrayList<>();
+        allUsers.addAll(registeredUsers);
+        allUsers.addAll(registeredDeliveryStaff);
+        allUsers.addAll(registeredFoodManagers);
+
+        User matchingUser  = allUsers.stream()
+                .filter(u -> u.id().equals(id))
+                .findFirst()
+                .orElse(null);
+
+        if (matchingUser  != null && authenticationManager.loginUser (id, password)) {
+            currentUser  = matchingUser ;
+
+            System.out.println("Login successful. Welcome " + matchingUser .name());
+            return true;
+        }
+        return false;
+    }
+
+    private static void userMenu(Scanner scanner) {
+        if (currentUser  instanceof Customer) {
+            customerMenu(scanner);
+        } else if (currentUser  instanceof DeliveryStaff) {
+            deliveryStaffMenu(scanner);
+        } else if (currentUser  instanceof FoodManager) {
+            foodManagerMenu(scanner);
+        }
+    }
+
+    private static void customerMenu(Scanner scanner) {
+        Customer customer = (Customer) currentUser ;
+        boolean loggedIn = true;
+
+        while (loggedIn) {
+            System.out.println("\n=== Customer Menu ===");
+            System.out.println("1. View Menu");
+            System.out.println("2. Place Order");
+            System.out.println("3. Check Order Status");
+            System.out.println("4. Logout");
+            System.out.print("Enter your choice: ");
+
+            int choice = scanner.nextInt();
+            scanner.nextLine();
+
+            switch (choice) {
+                case 1:
+                    viewMenu();
+                    break;
+                case 2:
+                    System.out.print("Enter the food item name: ");
+                    String foodName = scanner.nextLine();
+                    customer.placeOrder(foodName, foodManager, orders);
+                    break;
+                case 3:
+                    customer.checkOrderStatus(orders);
+                    break;
+                case 4:
+                    loggedIn = false;
+                    currentUser  = null;
+                    break;
+                default:
+                    System.out.println("Invalid choice.");
             }
         }
     }
 
-    // Displays the main menu options to the user
-    private static void displayMenu() {
-        System.out.println("\n=== Delivery App Menu ===");
-        System.out.println("1. Add Delivery Staff");
-        System.out.println("2. Place Order");
-        System.out.println("3. Show Orders");
-        System.out.println("4. Show Employees");
-        System.out.println("5. Close Store");
-        System.out.print("Enter your choice: ");
-    }
+    private static void deliveryStaffMenu(Scanner scanner) {
+        DeliveryStaff deliveryStaff = (DeliveryStaff) currentUser ;
+        boolean loggedIn = true;
 
-    // Adds a new delivery staff member based on user input
-    private static void addDeliveryStaff(Scanner scanner) {
-        System.out.print("Enter staff name: ");
-        String name = scanner.nextLine();
-        System.out.print("Enter staff ID: ");
-        String id = scanner.nextLine();
+        while (loggedIn) {
+            System.out.println("\n=== Delivery Staff Menu ===");
+            System.out.println("1. Show Available Orders");
+            System.out.println("2. Start delivery");
+            System.out.println("3. Logout");
+            System.out.print("Enter your choice:");
+            int choice = scanner.nextInt();
+            scanner.nextLine();
 
-        // Check if staff with same ID already exists
-        boolean staffExists = deliveryStaffList.stream()
-                .anyMatch(staff -> staff.getId().equals(id));
+            switch (choice) {
+                case 1:
+                    showAvailableOrders();
+                    break;
+                case 2:
+                    Order orderToDeliver = orders.stream()
+                        .filter(order -> !order.isCompleted() && order.getAssignedStaff() == null)
+                        .findFirst().orElse(null);
 
-        if (staffExists) {
-            System.out.println("A staff member with this ID already exists.");
-            return;
-        }
+                    if (orderToDeliver == null){
+                        System.out.println("No orders to deliver.");
+                        break;
+                    }
+                    orderToDeliver.setAssignedStaff(deliveryStaff);
+                    deliveryStaff.startDelivery(orderToDeliver, scanner);
 
-        DeliveryStaff staff = new DeliveryStaff(name, id);
-        deliveryStaffList.add(staff);
-        System.out.println("Delivery staff " + staff.getName() + " added successfully.");
-    }
-
-    // Place a new order based on user input
-    private static void placeOrder(Scanner scanner) {
-        System.out.print("Enter customer name: ");
-        String customerName = scanner.nextLine();
-
-        System.out.println("Enter pizza type (1: MARGHERITA, 2: PEPPERONI, 3: VEGGIE, 4: BBQ_CHICKEN): ");
-        int pizzaTypeInput = scanner.nextInt();
-        scanner.nextLine(); // Consume newline
-
-        PizzaType pizzaType; // Variable to hold the selected pizza
-        switch (pizzaTypeInput) {
-            case 1:
-                pizzaType = PizzaType.MARGHERITA;
-                break;
-            case 2:
-                pizzaType = PizzaType.PEPPERONI;
-                break;
-            case 3:
-                pizzaType = PizzaType.VEGGIE;
-                break;
-            case 4:
-                pizzaType = PizzaType.BBQ_CHICKEN;
-                break;
-            default:
-                System.out.println("Invalid pizza type. Please try again.");
-                return;
-        }
-
-        // Find an available delivery staff member
-        DeliveryStaff availableStaff = deliveryStaffList.stream()
-                .filter(DeliveryStaff::isAvailable)
-                .findFirst()
-                .orElse(null);
-
-        if (availableStaff != null) {
-            // Create a new order and assign it to the available staff
-            Order order = new Order(customerName, pizzaType.name(), pizzaType.getDeliveryTime(), false);
-            orders.add(order);
-
-            // Mark the staff member as unavailable
-            availableStaff.setAvailable(false);
-            order.setAssignedStaff(availableStaff); // Assign staff to the order
-
-            System.out.println("Order placed successfully and assigned to " + availableStaff.getName() + ".");
-        } else {
-            System.out.println("No available delivery staff. Please try again later.");
+                    List<String> commands = deliveryStaff.generateDeliveryCommands(orderToDeliver.getRemainingTicks());
+                    deliveryStaff.performDelivery(commands, scanner);
+                    break;
+                case 3:
+                    loggedIn = false;
+                    currentUser  = null;
+                    break;
+                default:
+                    System.out.println("Invalid choice.");
+            }
         }
     }
 
-    // Displays the current orders to the user
-    private static void showOrders() {
-        System.out.println("\n=== Current Orders ===");
+
+    private static void foodManagerMenu(Scanner scanner) {
+        FoodManager currentFoodManager = (FoodManager) currentUser ;
+        boolean loggedIn = true;
+
+        while (loggedIn) {
+            System.out.println("\n=== Food Manager Menu ===");
+            System.out.println("1. View Menu");
+            System.out.println("2. Add Food Item");
+            System.out.println("3. Save Menu");
+            System.out.println("4. Logout");
+            System.out.print("Enter your choice: ");
+
+            int choice = scanner.nextInt();
+            scanner.nextLine();
+
+            switch (choice) {
+                case 1:
+                    currentFoodManager.viewMenu();
+                    break;
+                case 2:
+                    System.out.print("Enter food item name: ");
+                    String foodName = scanner.nextLine();
+                    System.out.print("Enter delivery time (in ticks): ");
+                    int deliveryTime = scanner.nextInt();
+                    scanner.nextLine();
+                    currentFoodManager.addFoodItem(foodName, deliveryTime);
+                    break;
+                case 3:
+                    currentFoodManager.saveMenu();
+                    break;
+                case 4:
+                    loggedIn = false;
+                    currentUser  = null;
+                    break;
+                default:
+                    System.out.println("Invalid choice.");
+            }
+        }
+    }
+
+    private static void viewMenu() {
+        System.out.println("\n=== Menu ===");
+        for (FoodItem item : foodManager.getFoodItems()) {
+            System.out.println("Food: " + item.getName() + ", Delivery Time: " + item.getDeliveryTime() + " ticks");
+        }
+    }
+
+    private static void showAvailableOrders() {
+        System.out.println("\n=== Available Orders ===");
         for (Order order : orders) {
-            String staffName = order.getAssignedStaff() != null ? order.getAssignedStaff().getName() : "Unassigned";
-            System.out.println("Customer: " + order.getCustomerName() +
-                    ", Pizza: " + order.getPizzaType() +
-                    ", Remaining Ticks: " + order.getRemainingTicks() +
-                    ", Completed: " + order.isCompleted() +
-                    ", Assigned to: " + staffName);
+            if (!order.isCompleted()) {
+                System.out.println("Customer: " + order.getCustomerName() +
+                        ", Food: " + order.getFoodType() +
+                        ", Remaining Ticks: " + order.getRemainingTicks());
+            }
         }
     }
 
-    // Displays the current employees to the user
-    private static void showEmployees() {
-        System.out.println("\n=== Current Delivery Staff ===");
-        for (DeliveryStaff staff : deliveryStaffList) {
-            System.out.println(staff.getName() + ", ID: " + staff.getId() + ", Available: " + staff.isAvailable());
+    private static void saveDataAndExit(Scanner scanner) {
+        for(DeliveryStaff deliveryStaff : registeredDeliveryStaff){
+            deliveryStaff.setAvailable(true);
         }
-    }
-
-    // Saves the current state and closes the application
-    private static void closeStore() {
-        // Ensure all current state is saved before closing
-        fileManager.saveDeliveryStaff(deliveryStaffList);
+        fileManager.saveDeliveryStaff(registeredDeliveryStaff);
         fileManager.saveOrders(orders);
-        System.out.println("Store closed. Final state saved.");
+        fileManager.saveCustomers(registeredUsers);
+        fileManager.saveFoodManagers(registeredFoodManagers);
+        System.out.println("Goodbye!");
     }
 }
